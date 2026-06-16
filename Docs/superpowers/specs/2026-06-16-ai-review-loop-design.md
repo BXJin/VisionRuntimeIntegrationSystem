@@ -11,7 +11,7 @@ Use a local PowerShell script as the orchestrator. The first version is intentio
 ```text
 Codex development worktree
 -> local script captures implementation summary and git diff
--> Claude Code local review
+-> handoff file for an existing Claude session or Claude Code local review
 -> structured review artifact
 -> optional Codex local review application
 -> Codex validates feedback, edits if needed, runs checks, and reports outcome
@@ -27,12 +27,21 @@ Creates a timestamped `.ai-review/<timestamp>/` session with:
 
 - `implementation-context.md`
 - `review-diff.patch`
+- `handoff.md`
 - `claude-review-prompt.md`
 - `claude-review.json`
 - optional `codex-apply-prompt.md`
 - optional `codex-review-result.json`
 
-The script supports `ReviewOnly`, `ApplyOnly`, and `Full` modes.
+The script supports `HandoffOnly`, `ReviewOnly`, `ApplyOnly`, and `Full` modes. `HandoffOnly` is preferred for context-sensitive work because it lets the user paste a structured handoff into an existing Claude session.
+
+Artifacts are grouped by pair name:
+
+```text
+.ai-review/<pair-name>/<timestamp>/
+```
+
+This allows multiple Codex/Claude pairs to run at the same time without mixing review context.
 
 ### `.github/claude/review.md`
 
@@ -70,8 +79,8 @@ Documents setup, required secrets, how to run the loop, and known limitations.
 
 Local review needs the developer's existing CLI authentication:
 
-- `claude`
-- `codex`
+- `claude` for `ReviewOnly` and `Full`
+- `codex` for `ApplyOnly` and `Full`
 - `git`
 
 ## Security Notes
@@ -80,6 +89,7 @@ Local review needs the developer's existing CLI authentication:
 - Treat Claude review output as untrusted analysis.
 - Keep Codex application manual until the review quality is proven on real PRs.
 - Avoid mixed unrelated local changes before running `Full`.
+- Use explicit pair names when several tasks are active.
 - Do not commit `.ai-review/` artifacts.
 
 ## Rollout

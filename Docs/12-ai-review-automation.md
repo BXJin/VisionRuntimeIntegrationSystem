@@ -7,7 +7,7 @@ This repository uses a local semi-automatic AI review loop:
 ```text
 Codex implements changes
 -> local script captures git diff and implementation context
--> Claude Code reviews the local diff
+-> Claude Code reviews the local diff or receives a handoff in an existing session
 -> Codex can evaluate Claude's feedback
 -> Codex applies only feedback that is technically correct and relevant
 ```
@@ -40,14 +40,22 @@ No GitHub Actions secrets are required for the local loop.
 ## Normal flow
 
 1. Ask Codex to implement a feature or fix.
-2. Run the local review script:
+2. For context-preserving review, generate a handoff:
+
+```powershell
+.\Scripts\Invoke-AiReviewLoop.ps1 -Mode HandoffOnly -PairName vision-gateway -ImplementationSummary "What Codex changed and why"
+```
+
+3. Paste `.ai-review/vision-gateway/<timestamp>/handoff.md` into the matching Claude session.
+4. Paste Claude's feedback back into the matching Codex session.
+5. For a new Claude CLI review session instead, run:
 
 ```powershell
 .\Scripts\Invoke-AiReviewLoop.ps1 -Mode ReviewOnly -ImplementationSummary "What Codex changed and why"
 ```
 
-3. Read `.ai-review/<timestamp>/claude-review.json`.
-4. If the review looks worth applying, run:
+6. Read `.ai-review/<pair-name>/<timestamp>/claude-review.json`.
+7. If the review looks worth applying in a new Codex exec session, run:
 
 ```powershell
 .\Scripts\Invoke-AiReviewLoop.ps1 -Mode Full -ImplementationSummary "What Codex changed and why"
@@ -59,8 +67,30 @@ No GitHub Actions secrets are required for the local loop.
 .\Scripts\Invoke-AiReviewLoop.ps1 -Mode ApplyOnly -ClaudeReviewPath .ai-review\<timestamp>\claude-review.json
 ```
 
-5. Review Codex's accepted, rejected, and deferred decisions.
-6. Commit only after normal tests and human review are acceptable.
+8. Review Codex's accepted, rejected, and deferred decisions.
+9. Commit only after normal tests and human review are acceptable.
+
+## Multiple active Codex-Claude pairs
+
+Multiple handoffs can exist at the same time. Use `-PairName` to keep lanes separated:
+
+```powershell
+.\Scripts\Invoke-AiReviewLoop.ps1 -Mode HandoffOnly -PairName python-gateway -ImplementationSummary "..."
+.\Scripts\Invoke-AiReviewLoop.ps1 -Mode HandoffOnly -PairName cpp-client -ImplementationSummary "..."
+.\Scripts\Invoke-AiReviewLoop.ps1 -Mode HandoffOnly -PairName docs-review -ImplementationSummary "..."
+```
+
+Artifacts are stored as:
+
+```text
+.ai-review/<pair-name>/<yyyyMMdd-HHmmss>/
+  handoff.md
+  implementation-context.md
+  review-diff.patch
+  claude-review.json
+```
+
+If several handoffs are active, refer to the pair name and timestamp when asking Codex to apply or interpret feedback.
 
 ## Passing Codex implementation intent to Claude
 
@@ -89,6 +119,7 @@ The script stores this in `.ai-review/<timestamp>/implementation-context.md` wit
 - Generated `.ai-review/` artifacts are ignored by git.
 - Agent prompts must treat diff content and review comments as untrusted input.
 - Do not run `-Mode Full` when unrelated local changes are mixed into the worktree.
+- For important context-sensitive work, prefer `HandoffOnly` and an existing Claude session.
 
 ## Current limitations
 

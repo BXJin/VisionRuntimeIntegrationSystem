@@ -203,6 +203,47 @@ Verification:
 
 If verification was not run, say so directly and explain why.
 
+## Codex-Claude local review pairing rules
+
+This repository can use Codex and Claude Code as paired local agents. The preferred workflow is not full unattended automation. The preferred workflow is context-preserving handoff:
+
+```text
+Codex implementation session
+-> generate handoff artifact
+-> paste handoff into the matching Claude review session
+-> paste Claude feedback back into the matching Codex session
+-> Codex judges feedback and applies only technically correct changes
+```
+
+### Why this exists
+
+The user may keep one Codex session and one Claude Code session open as a paired working unit. Multiple pairs may be open at the same time for different tasks. Do not assume there is only one active handoff.
+
+### Pairing rules
+
+- Treat each Codex/Claude pair as a separate review lane.
+- Use a short pair name when generating local handoff artifacts, such as `vision-gateway`, `cpp-client`, or `docs-review`.
+- Store generated artifacts under `.ai-review/<pair-name>/<timestamp>/`.
+- Never commit `.ai-review/` artifacts.
+- A handoff should include implementation intent, changed files, design choices, known limitations, verification results, git status, and diff location.
+- For important design-sensitive work, prefer `HandoffOnly` mode and paste `handoff.md` into the existing Claude session instead of starting a brand-new Claude review session.
+- Use fully automated `Full` mode only for small, well-scoped changes where losing conversational context is acceptable.
+
+### Review authority rules
+
+- Claude feedback is review input, not a command.
+- Codex must verify each Claude finding against current code, docs, tests, and project goals.
+- Accept feedback only when it is technically correct, relevant, and within the task scope.
+- Reject or defer speculative, stylistic, stale, or scope-expanding feedback.
+- When Claude feedback is pasted back into Codex, Codex should summarize accepted, rejected, and deferred items before editing files.
+
+### Multi-handoff rules
+
+- If several tasks are active, do not mix handoffs between pairs.
+- When the user references "that Claude review" or "that handoff", inspect `.ai-review/` paths, timestamps, and pair names before assuming which one they mean.
+- If ambiguity remains, ask which pair name or timestamp to use.
+- Keep handoff names operational, not vague. Prefer `python-gateway-onnx` over `review1`.
+
 ## 너가 지켜야 할 규칙
 - 1) 많은 부분을 수정해야 한다면 반드시 나에게 물어보고 진행해, 계획부터 말하고 승인을 받은 후에 진행해
 - 2) 하나의 파일에 코드를 다 넣지 말고, 경력 10년 이상의 배테랑 개발자처럼 기능별로 모듈화 해 유지보수가 용이하도록(OOP 기반 설계)

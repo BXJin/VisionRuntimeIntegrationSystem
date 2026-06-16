@@ -20,8 +20,9 @@
 The script supports:
 
 ```powershell
--Mode ReviewOnly|ApplyOnly|Full
+-Mode HandoffOnly|ReviewOnly|ApplyOnly|Full
 -ImplementationSummary "<summary>"
+-PairName default
 -BaseRef origin/main
 -ArtifactsDir .ai-review
 -ClaudeReviewPath .ai-review\<timestamp>\claude-review.json
@@ -36,6 +37,7 @@ The script writes:
 ```text
 .ai-review/<timestamp>/implementation-context.md
 .ai-review/<timestamp>/review-diff.patch
+.ai-review/<timestamp>/handoff.md
 ```
 
 - [x] **Step 3: Run Claude local review**
@@ -99,3 +101,13 @@ Run:
 ```
 
 Expected: context, diff, and Claude placeholder JSON paths are printed.
+
+- [x] **Step 2: Dry-run a named handoff lane**
+
+Run:
+
+```powershell
+.\Scripts\Invoke-AiReviewLoop.ps1 -Mode HandoffOnly -PairName docs-review -ImplementationSummary "Dry run for named handoff lane."
+```
+
+Expected: artifacts are written under `.ai-review/docs-review/<timestamp>/`.

@@ -1,8 +1,10 @@
 param(
-    [ValidateSet("ReviewOnly", "ApplyOnly", "Full")]
+    [ValidateSet("HandoffOnly", "ReviewOnly", "ApplyOnly", "Full")]
     [string]$Mode = "ReviewOnly",
 
     [string]$ImplementationSummary = "",
+
+    [string]$PairName = "default",
 
     [string]$BaseRef = "origin/main",
 
@@ -100,6 +102,7 @@ function New-ReviewContext {
 
     $diffPath = Join-Path $SessionDir "review-diff.patch"
     $contextPath = Join-Path $SessionDir "implementation-context.md"
+    $handoffPath = Join-Path $SessionDir "handoff.md"
 
     @"
 # Review diff
@@ -174,9 +177,90 @@ Read `$diffPath`.
 Review the implementation and diff as if you are reviewing a pull request. Focus on correctness, async/state risks, security, contract mismatches, missing tests, and maintainability risks. Do not request style-only changes.
 "@ | Set-Content -Path $contextPath -Encoding UTF8
 
+    @"
+# Claude review handoff
+
+Paste this handoff into the matching Claude Code review session for this task.
+
+## What I need from Claude
+
+Review this implementation like a senior code reviewer. Focus on real bugs, async/state problems, security or permission risks, API contract mismatches, missing tests, and maintainability risks. Do not request style-only changes. Return findings grouped as must-fix and optional.
+
+## Codex implementation summary
+
+$Summary
+
+## Repository state
+
+- Root: `$RepoRoot`
+- Branch: `$branch`
+- Base ref: `$ResolvedBaseRef`
+- Last commit: `$lastCommit`
+
+## Git status
+
+````text
+$status
+````
+
+## Diff stats
+
+### Branch diff
+
+````text
+$branchStat
+````
+
+### Staged diff
+
+````text
+$stagedStat
+````
+
+### Working tree diff
+
+````text
+$worktreeStat
+````
+
+## Full diff
+
+The full patch is saved at:
+
+````text
+$diffPath
+````
+
+If you cannot read local files from this session, ask me to paste `review-diff.patch`.
+
+## Response format
+
+Use this structure:
+
+````text
+Summary:
+- ...
+
+Must fix:
+- File/area:
+  Issue:
+  Why it matters:
+  Suggested fix:
+
+Optional:
+- File/area:
+  Issue:
+  Suggested fix:
+
+Verdict:
+- approve | request_changes
+````
+"@ | Set-Content -Path $handoffPath -Encoding UTF8
+
     return @{
         ContextPath = $contextPath
         DiffPath = $diffPath
+        HandoffPath = $handoffPath
     }
 }
 
@@ -280,13 +364,23 @@ Assert-CommandExists "codex"
 
 $resolvedBaseRef = Resolve-BaseRef $BaseRef
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$sessionDir = Join-Path $repoRoot (Join-Path $ArtifactsDir $timestamp)
+$safePairName = if ([string]::IsNullOrWhiteSpace($PairName)) { "default" } else { $PairName -replace '[^A-Za-z0-9._-]', '-' }
+$sessionDir = Join-Path $repoRoot (Join-Path (Join-Path $ArtifactsDir $safePairName) $timestamp)
 New-Item -ItemType Directory -Force -Path $sessionDir | Out-Null
 
 $context = New-ReviewContext -RepoRoot $repoRoot -SessionDir $sessionDir -ResolvedBaseRef $resolvedBaseRef -Summary $ImplementationSummary
 
 $claudeReviewPath = Join-Path $sessionDir "claude-review.json"
-if ($Mode -in @("ReviewOnly", "Full") -and -not $SkipClaude) {
+if ($Mode -eq "HandoffOnly") {
+    @"
+{
+  "summary": "HandoffOnly mode generated handoff.md for an existing Claude session.",
+  "must_fix": [],
+  "optional": [],
+  "verdict": "approve"
+}
+"@ | Set-Content -Path $claudeReviewPath -Encoding UTF8
+} elseif ($Mode -in @("ReviewOnly", "Full") -and -not $SkipClaude) {
     $claudeReviewPath = Invoke-ClaudeReview -RepoRoot $repoRoot -SessionDir $sessionDir -ContextPath $context.ContextPath
 } elseif ($Mode -eq "ApplyOnly") {
     $resolvedClaudeReviewPath = Resolve-ClaudeReviewPath -RepoRoot $repoRoot -ArtifactsDir $ArtifactsDir -RequestedPath $ClaudeReviewPath
@@ -311,6 +405,8 @@ if ($Mode -in @("ApplyOnly", "Full") -and -not $SkipCodex) {
 }
 
 Write-Host "AI review session created:"
+Write-Host "  Pair:    $safePairName"
+Write-Host "  Handoff: $($context.HandoffPath)"
 Write-Host "  Context: $($context.ContextPath)"
 Write-Host "  Diff:    $($context.DiffPath)"
 Write-Host "  Claude:  $claudeReviewPath"
