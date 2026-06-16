@@ -1,0 +1,45 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "must_fix", "optional", "verdict"],
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "must_fix": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "line_or_area", "issue", "reason", "suggested_fix"],
+        "properties": {
+          "file": { "type": "string" },
+          "line_or_area": { "type": "string" },
+          "issue": { "type": "string" },
+          "reason": { "type": "string" },
+          "suggested_fix": { "type": "string" }
+        }
+      }
+    },
+    "optional": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "line_or_area", "issue", "reason", "suggested_fix"],
+        "properties": {
+          "file": { "type": "string" },
+          "line_or_area": { "type": "string" },
+          "issue": { "type": "string" },
+          "reason": { "type": "string" },
+          "suggested_fix": { "type": "string" }
+        }
+      }
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["approve", "request_changes"]
+    }
+  }
+}
+

@@ -1,0 +1,174 @@
+name: AI Review Loop
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to evaluate with Codex"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  claude_review:
+    name: Claude PR review
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout pull request merge ref
+        uses: actions/checkout@v5
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          persist-credentials: false
+
+      - name: Run Claude Code review
+        id: claude_review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          use_sticky_comment: true
+          display_report: false
+          show_full_output: false
+          prompt: |
+            Read .github/claude/review.md and review this pull request diff only.
+            Return structured JSON matching .github/claude/review.schema.json.
+          claude_args: >-
+            --max-turns 10
+            --json-schema .github/claude/review.schema.json
+
+      - name: Save Claude structured review
+        shell: bash
+        env:
+          STRUCTURED_OUTPUT: ${{ steps.claude_review.outputs.structured_output }}
+        run: |
+          if [ -n "$STRUCTURED_OUTPUT" ]; then
+            printf '%s\n' "$STRUCTURED_OUTPUT" > claude-review.json
+          else
+            printf '%s\n' '{"summary":"Claude did not return structured output.","must_fix":[],"optional":[],"verdict":"request_changes"}' > claude-review.json
+          fi
+
+      - name: Upload Claude review artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: claude-review-pr-${{ github.event.pull_request.number }}
+          path: claude-review.json
+
+  codex_apply_review:
+    name: Codex apply Claude review
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
+    steps:
+      - name: Read pull request metadata
+        id: pr
+        uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+        with:
+          script: |
+            const prNumber = Number(process.env.PR_NUMBER);
+            if (!Number.isInteger(prNumber) || prNumber <= 0) {
+              core.setFailed(`Invalid pr_number: ${process.env.PR_NUMBER}`);
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+            if (pr.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed('Codex apply is disabled for fork pull requests.');
+              return;
+            }
+            core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('number', String(pr.number));
+
+      - name: Checkout pull request head
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.pr.outputs.head_ref }}
+          fetch-depth: 0
+
+      - name: Download latest Claude review artifact
+        uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        with:
+          script: |
+            const fs = require('fs');
+            const artifactName = `claude-review-pr-${process.env.PR_NUMBER}`;
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: artifactName,
+              per_page: 100,
+            });
+            const candidates = artifacts
+              .filter((artifact) => artifact.name === artifactName && !artifact.expired)
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            if (candidates.length === 0) {
+              core.setFailed(`No non-expired Claude review artifact found named ${artifactName}. Run the Claude PR review job first.`);
+              return;
+            }
+            const latest = candidates[0];
+            const download = await github.rest.actions.downloadArtifact({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              artifact_id: latest.id,
+              archive_format: 'zip',
+            });
+            fs.writeFileSync('claude-review.zip', Buffer.from(download.data));
+            core.info(`Downloaded ${artifactName} from artifact ${latest.id}.`);
+
+      - name: Extract Claude review artifact
+        shell: bash
+        run: |
+          unzip -o claude-review.zip
+          test -s claude-review.json
+
+      - name: Run Codex to evaluate Claude review
+        id: codex_apply
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/codex/apply-review.md
+          output-file: codex-review-result.json
+          output-schema-file: .github/codex/apply-review.schema.json
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+          codex-args: >-
+            --full-auto
+
+      - name: Upload Codex review-application result
+        uses: actions/upload-artifact@v5
+        with:
+          name: codex-review-result-pr-${{ steps.pr.outputs.number }}
+          path: codex-review-result.json
+
+      - name: Commit Codex changes if any
+        shell: bash
+        run: |
+          rm -f claude-review.json claude-review.zip codex-review-result.json
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Codex produced no file changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: apply validated Claude review feedback"
+          git push

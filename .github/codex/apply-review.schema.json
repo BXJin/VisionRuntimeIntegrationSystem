@@ -1,0 +1,68 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["accepted", "rejected", "deferred", "changed_files", "verification", "final_verdict"],
+  "properties": {
+    "accepted": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "issue", "reason", "change_summary"],
+        "properties": {
+          "file": { "type": "string" },
+          "issue": { "type": "string" },
+          "reason": { "type": "string" },
+          "change_summary": { "type": "string" }
+        }
+      }
+    },
+    "rejected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "issue", "reason"],
+        "properties": {
+          "file": { "type": "string" },
+          "issue": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "deferred": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "issue", "reason"],
+        "properties": {
+          "file": { "type": "string" },
+          "issue": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "changed_files": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "verification": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "result"],
+        "properties": {
+          "command": { "type": "string" },
+          "result": { "type": "string" }
+        }
+      }
+    },
+    "final_verdict": {
+      "type": "string",
+      "enum": ["changes_applied", "no_applicable_changes", "blocked"]
+    }
+  }
+}
+
